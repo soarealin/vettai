@@ -724,6 +724,33 @@ def export_threat_database(results, output_path):
         }
 
         # Extract indicators of compromise (IoCs)
+        # Known-legitimate domains (not IoCs even if in suspicious skills)
+        LEGIT_DOMAINS = {
+            # Code hosting & CDNs
+            "github.com", "githubusercontent.com", "gitlab.com", "bitbucket.org",
+            "npmjs.com", "npmjs.org", "pypi.org", "crates.io",
+            # Dev tools & package managers
+            "brew.sh", "astral.sh", "rust-lang.org", "go.dev",
+            "nodejs.org", "python.org", "deno.land", "bun.sh",
+            "cursor.com", "opencode.dev",
+            # AI platforms (legitimate)
+            "anthropic.com", "openai.com", "ollama.com", "huggingface.co",
+            "openclaw.ai", "parallel.ai", "vapi.ai",
+            # Cloud & infra
+            "docker.com", "docker.io", "tailscale.com", "fly.io",
+            "google.com", "googleapis.com", "cloudflare.com",
+            "microsoft.com", "azure.com", "aws.amazon.com",
+            "vercel.com", "netlify.com", "heroku.com",
+            # Reference & knowledge
+            "stackoverflow.com", "reddit.com", "wikipedia.org",
+            # Blockchain tools (legit, used by legit crypto skills)
+            "paradigm.xyz", "foundry.paradigm.xyz",
+            # Shell script hosts (legit)
+            "inference.sh", "install.sh",
+            # Other
+            "example.com", "localhost",
+        }
+
         for f in r.findings:
             # Extract IPs
             ips = re.findall(r"\d+\.\d+\.\d+\.\d+", f.match)
@@ -733,15 +760,25 @@ def export_threat_database(results, output_path):
                         "type": "ip", "value": ip
                     })
 
-            # Extract domains (exclude common file extensions)
-            domains = re.findall(
-                r"(?:https?://)?([a-z0-9][-a-z0-9]*\.(?:com|net|org|io|dev|ai|co|app|xyz|sh))",
+            # Extract domains from URLs (full hostname)
+            # Pattern 1: Full URLs with https:// or www.
+            urls = re.findall(
+                r"(?:https?://|www\.)((?:[a-z0-9](?:[-a-z0-9]*[a-z0-9])?\.)+[a-z]{2,})",
                 f.match, re.I
             )
-            for d in domains:
-                if d not in [i["value"] for i in threat_entry["indicators"]]:
+            # Pattern 2: Bare domains followed by a path (e.g. glot.io/snip/abc)
+            bare_domains = re.findall(
+                r"(?<![a-z0-9/._-])((?:[a-z0-9](?:[-a-z0-9]*[a-z0-9])?\.)+(?:com|net|org|io|dev|ai|co|app|xyz))/",
+                f.match, re.I
+            )
+            for raw_domain in urls + bare_domains:
+                d_lower = raw_domain.lower().rstrip(".")
+                # Skip known-legitimate domains
+                if any(d_lower == leg or d_lower.endswith("." + leg) for leg in LEGIT_DOMAINS):
+                    continue
+                if d_lower not in [i["value"] for i in threat_entry["indicators"]]:
                     threat_entry["indicators"].append({
-                        "type": "domain", "value": d
+                        "type": "domain", "value": d_lower
                     })
 
             threat_entry["findings"].append({
@@ -905,6 +942,8 @@ Examples:
     parser.add_argument("--ai", action="store_true", help="Enable AI deep analysis (requires ANTHROPIC_API_KEY)")
     parser.add_argument("--smart", action="store_true",
                         help="Smart mode: regex first, AI only for suspicious+ skills (saves cost)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview what --smart/--ai would do without calling the API (no cost)")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
     parser.add_argument("--export-threats", metavar="FILE", help="Export threat database to JSON file")
     parser.add_argument("--version", action="version", version="VettAI 0.1.0")
@@ -915,9 +954,9 @@ Examples:
         parser.print_help()
         sys.exit(0)
 
-    # Check for API key if AI mode requested
+    # Check for API key if AI mode requested (skip check for dry-run)
     api_key = None
-    if args.ai or args.smart:
+    if (args.ai or args.smart) and not args.dry_run:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             flag = "--smart" if args.smart else "--ai"
@@ -930,9 +969,31 @@ Examples:
         results = audit_workspace(args.audit, deep=args.deep, as_json=args.json)
 
         # Smart audit: run AI only on suspicious+ skills
-        if args.smart and api_key:
+        if (args.smart or args.dry_run) and (api_key or args.dry_run):
             risky = [r for r in results if r.risk_score >= 20]
-            if risky:
+            safe_count = len(results) - len(risky)
+
+            if args.dry_run:
+                # Show what WOULD happen without calling the API
+                print(f"\n  🧪 DRY RUN — no API calls, no cost")
+                print(f"  {'═' * 46}")
+                print(f"  Total skills scanned:      {len(results)}")
+                print(f"  ✅ Safe (AI skipped):        {safe_count}")
+                print(f"  🔍 Would send to AI:        {len(risky)}")
+                print(f"  💰 Estimated cost:          ~${len(risky) * 0.02:.2f}")
+                print(f"     (vs ${len(results) * 0.02:.2f} without --smart)")
+                print(f"     Savings:                 ~${safe_count * 0.02:.2f} ({safe_count} skipped)")
+                if risky:
+                    print(f"\n  Skills that would trigger AI analysis:")
+                    print(f"  {'─' * 46}")
+                    for r in sorted(risky, key=lambda x: x.risk_score, reverse=True)[:25]:
+                        icon = VERDICT_DISPLAY[r.verdict]
+                        print(f"    {icon} {str(r.skill_name):30s} score: {r.risk_score}")
+                    if len(risky) > 25:
+                        print(f"    ... and {len(risky) - 25} more")
+                print(f"\n  ✅ Ready? Remove --dry-run to run for real.")
+                print()
+            elif risky:
                 print(f"\n  🤖 Smart mode: AI analyzing {len(risky)} suspicious skills")
                 print(f"     (skipping {len(results) - len(risky)} safe skills — saving ~${(len(results) - len(risky)) * 0.02:.2f})")
                 print()
@@ -973,6 +1034,34 @@ Examples:
         # AI analysis: always with --ai, only if suspicious with --smart
         ai_result = None
         run_ai = False
+
+        if args.dry_run:
+            # Show what would happen
+            would_run = False
+            if args.ai:
+                would_run = True
+            elif args.smart:
+                would_run = result.risk_score >= 20
+
+            print(format_terminal(result))
+            print(f"  🧪 DRY RUN — no API calls, no cost")
+            print(f"  {'═' * 46}")
+            if would_run:
+                skill_md = Path(args.path) / "SKILL.md"
+                content = skill_md.read_text(encoding="utf-8")
+                tokens = len(content) // 4  # rough estimate
+                print(f"  Would send to AI:    YES")
+                print(f"  Reason:              Score {result.risk_score} ≥ 20 (suspicious)")
+                print(f"  Estimated tokens:    ~{tokens:,} input + ~1,000 output")
+                print(f"  Estimated cost:      ~$0.02")
+            else:
+                print(f"  Would send to AI:    NO")
+                print(f"  Reason:              Score {result.risk_score} < 20 (safe)")
+                print(f"  Cost:                $0.00")
+            print(f"\n  ✅ Ready? Remove --dry-run to run for real.")
+            print()
+            sys.exit(1 if result.risk_score >= 50 else 0)
+
         if args.ai and api_key:
             run_ai = True
         elif args.smart and api_key:

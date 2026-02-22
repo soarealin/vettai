@@ -61,6 +61,12 @@ python3 scan.py --path ./path/to/skill/ --deep
 export ANTHROPIC_API_KEY=sk-ant-...
 python3 scan.py --path ./path/to/skill/ --ai
 
+# 🧠 Smart mode: regex first, AI only if suspicious (saves 91% cost)
+python3 scan.py --path ./path/to/skill/ --smart
+
+# 🧪 Dry run: see what --smart would do WITHOUT calling the API (free!)
+python3 scan.py --audit ~/.openclaw/skills --smart --dry-run
+
 # Audit all your installed skills
 python3 scan.py --audit ~/.openclaw/skills
 
@@ -236,6 +242,8 @@ Every skill you install is code you're trusting with your digital life. VettAI i
 - [x] Workspace audit (scan all installed skills)
 - [x] JSON output for CI/CD integration
 - [x] AI deep analysis with Claude (`--ai`)
+- [x] Smart mode — AI only for suspicious skills (`--smart`)
+- [x] Dry run — preview costs before spending (`--dry-run`)
 - [x] Threat intelligence database export (`--export-threats`)
 - [ ] OpenClaw pre-install hook (auto-scan before install)
 - [ ] GitHub Action
