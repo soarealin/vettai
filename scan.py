@@ -112,9 +112,9 @@ RULES = [
         "id": "SHELL-004",
         "severity": Severity.HIGH,
         "name": "Privilege Escalation",
-        "description": "Skill attempts to use elevated system privileges",
+        "description": "Skill attempts to use elevated system privileges for dangerous operations",
         "patterns": [
-            r"sudo\s+",
+            r"sudo\s+(?:rm|chmod|chown|mv|cp|dd|mkfs|kill|reboot|shutdown)",
             r"su\s+-\s+root",
             r"chmod\s+[0-7]*777",
             r"chmod\s+\+s\b",
@@ -205,9 +205,9 @@ RULES = [
         "patterns": [
             r"91\.92\.242\.30",
             r"glot\.io/snip",
-            r"paste(?:bin|\.ee|\.io)",
-            r"ngrok\.io",
-            r"serveo\.net",
+            r"(?:curl|wget|send|post).*paste(?:bin|\.ee|\.io)",
+            r"(?:curl|wget|send|post).*ngrok\.io",
+            r"(?:curl|wget|send|post).*serveo\.net",
         ],
     },
 
@@ -225,22 +225,27 @@ RULES = [
     {
         "id": "CRED-002",
         "severity": Severity.CRITICAL,
-        "name": "Environment File Access",
-        "description": "Skill attempts to read .env files containing secrets",
+        "name": "Environment File Exfiltration",
+        "description": "Skill reads .env files and may exfiltrate secrets",
         "patterns": [
-            r"(?:cat|read|source|\.)\s+.*\.env\b",
-            r"cat.*clawdbot/\.env",
-            r"cat.*openclaw/\.env",
+            r"cat\s+.*clawdbot/\.env",
+            r"cat\s+.*openclaw/\.env",
+            r"cat\s+.*\.env\s*\|",
+            r"(?:curl|wget|send|post|upload).*\.env",
+            r"\$\(cat\s+.*\.env\)",
         ],
     },
     {
         "id": "CRED-003",
         "severity": Severity.HIGH,
         "name": "Wallet / Crypto Key Access",
-        "description": "Skill targets cryptocurrency wallets, keys, or seed phrases",
+        "description": "Skill targets cryptocurrency wallet files, private keys, or seed phrases",
         "patterns": [
-            r"(?:wallet|keystore|keychain|seed.?phrase|private.?key|mnemonic)",
-            r"\.(?:bitcoin|ethereum|solana|metamask)",
+            r"(?:cat|read|copy|cp|open)\s+.*(?:wallet\.dat|keystore/)",
+            r"(?:cat|read|copy|cp|open)\s+.*\.(?:bitcoin|ethereum|solana)",
+            r"(?:cat|read|copy|cp|open)\s+.*seed.?phrase",
+            r"(?:cat|read|export|dump)\s+.*(?:private.?key|mnemonic)",
+            r"(?:cat|read|copy)\s+.*\.metamask",
         ],
     },
     {
@@ -272,11 +277,12 @@ RULES = [
     {
         "id": "SUPPLY-002",
         "severity": Severity.MEDIUM,
-        "name": "Unverified Download",
-        "description": "Skill downloads executables without integrity verification",
+        "name": "Unverified Download and Execute",
+        "description": "Skill downloads files and makes them executable without integrity checks",
         "patterns": [
-            r"(?:curl|wget)\s+.*(?:\.exe|\.sh|\.py|\.bin|\.dmg|\.pkg)\b",
-            r"chmod\s+\+x\s+.*(?:downloaded|tmp|temp)",
+            r"(?:curl|wget)\s+.*(?:\.exe|\.bin|\.dmg|\.pkg|\.appimage)\b",
+            r"chmod\s+\+x\s+.*(?:downloaded|tmp|temp|\/tmp)",
+            r"(?:curl|wget)\s+.*>\s*.*&&\s*chmod\s+\+x",
         ],
     },
 
@@ -383,9 +389,8 @@ def scan_skill(skill_path, deep=False):
 
     # Find SKILL.md
     skill_md = path / "SKILL.md"
-    if not skill_md.exists():
-        print(f"Error: No SKILL.md found in {skill_path}", file=sys.stderr)
-        sys.exit(1)
+    if not skill_md.exists() or skill_md.is_dir():
+        raise FileNotFoundError(f"No valid SKILL.md in {skill_path}")
 
     # Parse skill name from YAML frontmatter
     content = skill_md.read_text(encoding="utf-8")
@@ -395,7 +400,7 @@ def scan_skill(skill_path, deep=False):
             end = content.index("---", 3)
             fm = yaml.safe_load(content[3:end])
             if fm and isinstance(fm, dict):
-                skill_name = fm.get("name", "unknown")
+                skill_name = str(fm.get("name", "unknown"))
     except (ValueError, yaml.YAMLError):
         pass
 
@@ -539,40 +544,43 @@ def audit_workspace(workspace_path, deep=False, as_json=False):
     """Scan all skills in an OpenClaw workspace."""
     path = Path(workspace_path)
 
-    # Try common skill locations
-    skills_dirs = [
-        path / "skills",
-        path,
-        Path.home() / ".openclaw" / "skills",
-    ]
+    # Find all folders that contain a SKILL.md (works at any nesting depth)
+    skill_folders = sorted(path.rglob("SKILL.md"))
 
-    skills_dir = None
-    for d in skills_dirs:
-        if d.exists() and any((d / s / "SKILL.md").exists() for s in os.listdir(d) if (d / s).is_dir()):
-            skills_dir = d
-            break
+    if not skill_folders:
+        # Also try common fallback locations
+        fallbacks = [Path.home() / ".openclaw" / "skills"]
+        for fb in fallbacks:
+            if fb.exists():
+                skill_folders = sorted(fb.rglob("SKILL.md"))
+                if skill_folders:
+                    break
 
-    if skills_dir is None:
-        print(f"Error: No skills found in {workspace_path}", file=sys.stderr)
-        print("  Tried:", file=sys.stderr)
-        for d in skills_dirs:
-            print(f"    {d}", file=sys.stderr)
+    if not skill_folders:
+        print(f"Error: No SKILL.md files found in {workspace_path}", file=sys.stderr)
         sys.exit(1)
 
     print(f"\n🛡️  AgentShield Workspace Audit")
-    print(f"  Scanning: {skills_dir}\n")
+    print(f"  Scanning: {path}")
+    print(f"  Found:    {len(skill_folders)} skills\n")
 
     all_results = []
 
-    for item in sorted(skills_dir.iterdir()):
-        if item.is_dir() and (item / "SKILL.md").exists():
-            result = scan_skill(str(item), deep=deep)
+    for skill_md in skill_folders:
+        if skill_md.is_dir():
+            continue
+        skill_dir = skill_md.parent
+        try:
+            result = scan_skill(str(skill_dir), deep=deep)
             all_results.append(result)
-
+        except Exception as e:
             if not as_json:
+                print(f"  ⚠️  ERROR scanning {skill_dir.name}: {e}")
+
+        if not as_json:
                 # Compact one-line summary per skill
                 icon = VERDICT_DISPLAY[result.verdict]
-                print(f"  {icon:20s} {result.skill_name:30s} (score: {result.risk_score})")
+                print(f"  {icon:20s} {str(result.skill_name):30s} (score: {result.risk_score})")
 
     if as_json:
         output = [
@@ -646,7 +654,11 @@ Examples:
         worst = max((r.risk_score for r in results), default=0)
         sys.exit(1 if worst >= 50 else 0)
     else:
-        result = scan_skill(args.path, deep=args.deep)
+        try:
+            result = scan_skill(args.path, deep=args.deep)
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         if args.json:
             output = {
                 "skill_name": result.skill_name,
