@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AgentShield - Security Scanner for AI Agent Skills
+VettAI - Security Scanner for AI Agent Skills
 Scans SKILL.md and associated files for malicious patterns.
 
 Usage:
@@ -484,7 +484,7 @@ def format_terminal(result):
     """Format scan results for terminal output."""
     lines = [
         "",
-        "🛡️  AgentShield Skill Scan Report",
+        "🔍 VettAI Skill Scan Report",
         "═" * 50,
         "",
         f"  Skill:         {result.skill_name}",
@@ -560,7 +560,7 @@ def audit_workspace(workspace_path, deep=False, as_json=False):
         print(f"Error: No SKILL.md files found in {workspace_path}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\n🛡️  AgentShield Workspace Audit")
+    print(f"\n🔍 VettAI Workspace Audit")
     print(f"  Scanning: {path}")
     print(f"  Found:    {len(skill_folders)} skills\n")
 
@@ -626,7 +626,7 @@ def audit_workspace(workspace_path, deep=False, as_json=False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="🛡️ AgentShield — Security Scanner for AI Agent Skills",
+        description="🔍 VettAI — Security Scanner for AI Agent Skills",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -641,7 +641,7 @@ Examples:
     parser.add_argument("--audit", help="Audit all skills in a workspace/folder")
     parser.add_argument("--deep", action="store_true", help="Also scan scripts and reference files")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
-    parser.add_argument("--version", action="version", version="AgentShield 0.1.0")
+    parser.add_argument("--version", action="version", version="VettAI 0.1.0")
 
     args = parser.parse_args()
 

@@ -1,6 +1,6 @@
-# 🛡️ AgentShield
+# 🔍 VettAI
 
-**Security scanner for AI agent skills. Detect malware, prompt injection, and data exfiltration before they compromise your agent.**
+**Vet your AI skills before they vet you.** Security scanner for AI agent skills — detect malware, prompt injection, and data exfiltration before they compromise your agent.
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.1.0-blue" alt="Version">
@@ -15,7 +15,7 @@
 
 In January 2026, the [ClawHavoc campaign](https://snyk.io/articles/skill-md-shell-access/) compromised 341 skills on ClawHub — delivering the Atomic Stealer malware through innocent-looking AI agent skills. Attackers stole SSH keys, crypto wallets, API tokens, and even poisoned agent memory to create persistent backdoors.
 
-We built AgentShield to make sure this doesn't happen to you.
+We built VettAI to make sure this doesn't happen to you.
 
 **Our scan of the entire ClawHub registry found:**
 
@@ -47,8 +47,8 @@ We built AgentShield to make sure this doesn't happen to you.
 
 ```bash
 # Clone
-git clone https://github.com/soarealin/agentshield.git
-cd agentshield
+git clone https://github.com/soarealin/vettai.git
+cd vettai
 pip3 install pyyaml --break-system-packages
 
 # Scan a single skill
@@ -69,7 +69,7 @@ python3 scan.py --path ./path/to/skill/ --json
 ## Example: Catching a ClawHavoc-style Skill
 
 ```
-🛡️  AgentShield Skill Scan Report
+🔍 VettAI Skill Scan Report
 ══════════════════════════════════════════════════
 
   Skill:         youtube-summarize-pro
@@ -109,7 +109,7 @@ python3 scan.py --path ./path/to/skill/ --json
 
 ## How It Works
 
-AgentShield is a static analysis tool. It reads skill files — it never executes them.
+VettAI is a static analysis tool. It reads skill files — it never executes them.
 
 1. **Parse** — Reads YAML frontmatter and markdown instructions from SKILL.md
 2. **Match** — Checks content against 25+ security rules using pattern matching
@@ -121,7 +121,7 @@ Agent wants to install a skill
          │
          ▼
    ┌─────────────┐
-   │ AgentShield  │──→ Parse SKILL.md + scripts
+   │   VettAI     │──→ Parse SKILL.md + scripts
    │   Scanner    │──→ Match against 25+ rules
    │              │──→ Calculate risk score
    └──────┬──────┘
@@ -137,7 +137,7 @@ Agent wants to install a skill
 
 ## Supported Platforms
 
-AgentShield works with any agent platform using the AgentSkills format:
+VettAI works with any agent platform using the AgentSkills format:
 
 - ✅ **[OpenClaw](https://openclaw.ai)** (formerly Clawdbot)
 - ✅ **[Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code)**
@@ -162,6 +162,15 @@ Scoring uses severity-weighted findings with a logarithmic curve. A single CRITI
 
 ---
 
+## Why "VettAI"?
+
+**Vet** — to examine carefully for quality or suitability.
+**AI** — because AI agents deserve the same security scrutiny as any software.
+
+Every skill you install is code you're trusting with your digital life. VettAI is the security check that should have existed from day one.
+
+---
+
 ## Roadmap
 
 - [x] Static skill scanner with 25+ rules
@@ -170,7 +179,7 @@ Scoring uses severity-weighted findings with a logarithmic curve. A single CRITI
 - [ ] OpenClaw native skill integration
 - [ ] GitHub Action
 - [ ] Runtime policy engine
-- [ ] `npx agentshield scan` (npm package)
+- [ ] `npx vettai scan` (npm package)
 - [ ] Web dashboard
 - [ ] Enterprise features (SSO, SIEM, compliance)
 
@@ -186,16 +195,8 @@ Found a new attack pattern? Getting false positives? We want to hear from you.
 
 ---
 
-## Why "AgentShield"?
-
-AI agents are getting superpowers — shell access, email, file systems, payments. But with great power comes great attack surface. Every skill you install is code you're trusting with your digital life.
-
-AgentShield is the security check that should have existed from day one.
-
----
-
 ## License
 
 MIT — use it, fork it, protect your agents.
 
-**Stay safe. Scan your skills.** 🛡️
+**Vet your skills. Stay safe.** 🔍
