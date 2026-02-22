@@ -333,29 +333,44 @@ RULES = [
 # SCANNING LOGIC
 # ─────────────────────────────────────────────
 
+# Pre-compile all regex patterns once at import time (massive speedup)
+COMPILED_RULES = []
+for rule in RULES:
+    compiled_patterns = []
+    for p in rule["patterns"]:
+        try:
+            compiled_patterns.append(re.compile(p, re.IGNORECASE))
+        except re.error:
+            pass
+    COMPILED_RULES.append({
+        "id": rule["id"],
+        "severity": rule["severity"],
+        "name": rule["name"],
+        "description": rule["description"],
+        "compiled": compiled_patterns,
+    })
+
+
 def scan_content(content, filepath):
     """Scan a single file's content against all rules."""
     findings = []
     lines = content.split("\n")
 
-    for rule in RULES:
-        for pattern in rule["patterns"]:
-            try:
-                for i, line in enumerate(lines, 1):
-                    for match in re.finditer(pattern, line, re.IGNORECASE):
-                        findings.append(
-                            Finding(
-                                rule_id=rule["id"],
-                                severity=rule["severity"],
-                                name=rule["name"],
-                                description=rule["description"],
-                                line=i,
-                                match=match.group(0)[:100],
-                                file=filepath,
-                            )
+    for rule in COMPILED_RULES:
+        for pattern in rule["compiled"]:
+            for i, line in enumerate(lines, 1):
+                for match in pattern.finditer(line):
+                    findings.append(
+                        Finding(
+                            rule_id=rule["id"],
+                            severity=rule["severity"],
+                            name=rule["name"],
+                            description=rule["description"],
+                            line=i,
+                            match=match.group(0)[:100],
+                            file=filepath,
                         )
-            except re.error:
-                pass
+                    )
 
     return findings
 
@@ -835,8 +850,19 @@ def _extract_top_iocs(threats):
 # WORKSPACE AUDIT
 # ─────────────────────────────────────────────
 
+def _scan_skill_safe(args):
+    """Wrapper for multiprocessing — returns (result, error)."""
+    skill_dir, deep = args
+    try:
+        return scan_skill(str(skill_dir), deep=deep), None
+    except Exception as e:
+        return None, (skill_dir.name, str(e))
+
+
 def audit_workspace(workspace_path, deep=False, as_json=False):
     """Scan all skills in an OpenClaw workspace."""
+    from multiprocessing import Pool, cpu_count
+
     path = Path(workspace_path)
 
     # Find all folders that contain a SKILL.md (works at any nesting depth)
@@ -855,27 +881,35 @@ def audit_workspace(workspace_path, deep=False, as_json=False):
         print(f"Error: No SKILL.md files found in {workspace_path}", file=sys.stderr)
         sys.exit(1)
 
+    # Filter out directories
+    skill_dirs = [sm.parent for sm in skill_folders if not sm.is_dir()]
+    num_workers = min(cpu_count(), 8)
+
     print(f"\n🔍 VettAI Workspace Audit")
     print(f"  Scanning: {path}")
-    print(f"  Found:    {len(skill_folders)} skills\n")
+    print(f"  Found:    {len(skill_dirs)} skills ({num_workers} workers)\n")
 
     all_results = []
+    start = time.time()
 
-    for skill_md in skill_folders:
-        if skill_md.is_dir():
-            continue
-        skill_dir = skill_md.parent
-        try:
-            result = scan_skill(str(skill_dir), deep=deep)
-            all_results.append(result)
-        except Exception as e:
-            if not as_json:
-                print(f"  ⚠️  ERROR scanning {skill_dir.name}: {e}")
+    # Parallel scan
+    with Pool(processes=num_workers) as pool:
+        tasks = [(sd, deep) for sd in skill_dirs]
+        for result, error in pool.imap_unordered(_scan_skill_safe, tasks, chunksize=50):
+            if error and not as_json:
+                print(f"  ⚠️  ERROR scanning {error[0]}: {error[1]}")
+            if result:
+                all_results.append(result)
 
-        if not as_json:
-                # Compact one-line summary per skill
-                icon = VERDICT_DISPLAY[result.verdict]
-                print(f"  {icon:20s} {str(result.skill_name):30s} (score: {result.risk_score})")
+    elapsed = time.time() - start
+
+    # Sort by risk score descending for display
+    all_results.sort(key=lambda r: r.risk_score, reverse=True)
+
+    if not as_json:
+        for result in all_results:
+            icon = VERDICT_DISPLAY[result.verdict]
+            print(f"  {icon:20s} {str(result.skill_name):30s} (score: {result.risk_score})")
 
     if as_json:
         output = [
@@ -906,6 +940,7 @@ def audit_workspace(workspace_path, deep=False, as_json=False):
         print(f"  🟡 Low Risk:     {low}")
         print(f"  🟠 Suspicious:   {suspicious}")
         print(f"  🔴 Dangerous:    {dangerous}")
+        print(f"  ⏱️  Duration:     {elapsed:.1f}s ({total / max(elapsed, 0.1):.0f} skills/sec)")
 
         if dangerous > 0:
             print(f"\n  ⚠️  {dangerous} skill(s) need immediate attention!")
