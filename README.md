@@ -278,7 +278,7 @@ Agent:  🔍 Scanning youtube-summarize with VettAI first...
 - [x] Dry run — preview costs before spending (`--dry-run`)
 - [x] Threat intelligence database export (`--export-threats`)
 - [x] OpenClaw native skill (install VettAI as an agent skill)
-- [ ] OpenClaw pre-install hook ([proposed](https://github.com/openclaw/openclaw/issues/XXXX) — auto-block malicious installs)
+- [ ] OpenClaw pre-install hook ([proposed](https://github.com/openclaw/openclaw/issues/23926) — auto-block malicious installs)
 - [ ] GitHub Action
 - [ ] Runtime policy engine
 - [ ] `npx vettai scan` (npm package)
